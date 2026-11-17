@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OLAP Sales Cube</title>
+<meta name="description" content="Serverless OLAP: DuckDB-built star schema queried in the browser with DuckDB-WASM, deployed with GitHub Actions to GitHub Pages.">
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66;
+    --line: #e3e3de; --accent: #c2410c; --accent-soft: #fde7da; --bar: #ea7a3c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --panel: #1f1f1d; --ink: #ededea; --muted: #a3a39d;
+            --line: #33332f; --accent: #fb923c; --accent-soft: #3a2416; --bar: #f08a4b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header, main { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 28px; padding-bottom: 8px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0; }
+  .status { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 16px; margin: 16px 0; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .kpi .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .v { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  select, textarea, button { font: inherit; color: var(--ink); }
+  select { width: 100%; padding: 7px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
+  button { padding: 8px 14px; border-radius: 7px; border: 1px solid var(--accent);
+           background: var(--accent); color: #fff; cursor: pointer; font-weight: 600; }
+  button.ghost { background: transparent; color: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; min-height: 30px; align-items: center; }
+  .chip { background: var(--accent-soft); color: var(--ink); border-radius: 999px; padding: 3px 10px;
+          font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+  .chip button { padding: 0 4px; border: 0; background: none; color: var(--accent); font-weight: 700; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } }
+  .tablewrap { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+  th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; }
+  td.drill { color: var(--accent); cursor: pointer; text-decoration: underline dotted; }
+  tr.total td { font-weight: 700; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 10px;
+        overflow-x: auto; font-size: 12.5px; margin: 12px 0 0; white-space: pre-wrap; }
+  textarea { width: 100%; min-height: 120px; border: 1px solid var(--line); border-radius: 7px;
+             padding: 10px; background: var(--bg); font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  svg text { fill: var(--ink); font-size: 12px; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 16px 40px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>OLAP Sales Cube</h1>
+  <p class="sub">500K-row retail star schema, built by DuckDB in GitHub Actions and queried <b>in your browser</b> with DuckDB-WASM. No servers.</p>
+  <div class="status" id="status">Loading DuckDB-WASM…</div>
+</header>
+
+<main>
+  <section class="kpis" id="kpis"></section>
+
+  <section class="panel">
+    <h2>Pivot / slice &amp; dice</h2>
+    <div class="controls">
+      <div><label for="rows">Rows (dimension)</label><select id="rows"></select></div>
+      <div><label for="cols">Columns (optional)</label><select id="cols"></select></div>
+      <div><label for="measure">Measure</label><select id="measure"></select></div>
+      <div><label for="fyear">Slice: year</label><select id="fyear"></select></div>
+      <div><label for="fchannel">Slice: channel</label><select id="fchannel"></select></div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <p class="hint">Click an underlined row label to <b>drill down</b> (Year → Quarter → Month, Region → Country → Store, Category → Brand → Product). Remove a filter chip to <b>roll up</b>.</p>
+  </section>
+
+  <section class="grid2">
+    <div class="panel"><h2 id="tableTitle">Result</h2><div class="tablewrap" id="table"></div></div>
+    <div class="panel"><h2>Chart</h2><div id="chart"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>Generated SQL <span class="hint" id="timing"></span></h2>
+    <pre id="sql"></pre>
+  </section>
+
+  <section class="panel">
+    <h2>SQL console</h2>
+    <p class="hint">Tables: <code>fact_sales</code>, <code>dim_date</code>, <code>dim_store</code>, <code>dim_product</code>, <code>agg_sales_cube</code> and the denormalized <code>sales</code>.</p>
+    <textarea id="console">-- ROLLUP: subtotals by region and country
+SELECT coalesce(region, '(all)') AS region, coalesce(country, '(all)') AS country,
+       round(sum(revenue), 0) AS revenue
+FROM sales
+GROUP BY ROLLUP (region, country)
+ORDER BY region NULLS LAST, country NULLS LAST;</textarea>
+    <div style="margin-top:8px; display:flex; gap:8px;">
+      <button id="runSql">Run</button>
+      <button class="ghost" id="cubeSql">Example: pre-aggregated cube</button>
+    </div>
+    <div class="tablewrap" id="consoleOut" style="margin-top:12px"></div>
+  </section>
+</main>
+
+<footer>
+  Built with DuckDB · DuckDB-WASM · GitHub Actions · GitHub Pages — <span id="built"></span>
+</footer>
+
+<script type="module">
+import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm";
+
+const $ = (id) => document.getElementById(id);
+
+// ---------- OLAP metadata: dimensions, hierarchies, measures ----------
+const DIMS = {
+  year:     { label: "Year",     expr: "CAST(year AS VARCHAR)",               next: "quarter" },
+  quarter:  { label: "Quarter",  expr: "year || '-Q' || quarter",             next: "month" },
+  month:    { label: "Month",    expr: "strftime(date_key, '%Y-%m')",         next: null },
+  region:   { label: "Region",   expr: "region",                              next: "country" },
+  country:  { label: "Country",  expr: "country",                             next: "store" },
+  store:    { label: "Store",    expr: "store_name",                          next: null },
+  category: { label: "Category", expr: "category",                            next: "brand" },
+  brand:    { label: "Brand",    expr: "brand",                               next: "product" },
+  product:  { label: "Product",  expr: "product_name",                        next: null },
+  channel:  { label: "Channel",  expr: "channel",                             next: null },
+};
+const MEASURES = {
+  revenue: { label: "Revenue",      expr: "sum(revenue)",                      fmt: "money" },
+  profit:  { label: "Profit",       expr: "sum(revenue - cost)",               fmt: "money" },
+  margin:  { label: "Margin %",     expr: "100 * sum(revenue - cost) / sum(revenue)", fmt: "pct" },
+  units:   { label: "Units",        expr: "sum(quantity)",                     fmt: "int" },
+  orders:  { label: "Orders",       expr: "count(*)",                          fmt: "int" },
+  ticket:  { label: "Avg ticket",   expr: "avg(revenue)",                      fmt: "money" },
+};
+
+const state = { rows: "region", cols: "", measure: "revenue", year: "", channel: "", filters: [] };
+
+const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const nf1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+function fmt(v, kind) {
+  if (v === null || v === undefined) return "–";
+  v = Number(v);
+  if (kind === "money") return "$" + nf0.format(v);
+  if (kind === "pct") return nf1.format(v) + "%";
+  return nf0.format(v);
+}
+const esc = (s) => String(s).replace(/'/g, "''");
+const html = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------- Boot DuckDB-WASM ----------
+const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+const workerUrl = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" }));
+const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
+await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+URL.revokeObjectURL(workerUrl);
+const conn = await db.connect();
+
+async function query(sql) {
+  const res = await conn.query(sql);
+  const cols = res.schema.fields.map((f) => f.name);
+  const rows = res.toArray().map((r) => {
+    const o = r.toJSON();
+    for (const k in o) if (typeof o[k] === "bigint") o[k] = Number(o[k]);
+    return o;
+  });
+  return { cols, rows };
+}
+
+$("status").textContent = "Downloading Parquet files…";
+const t0 = performance.now();
+const tables = ["fact_sales", "dim_date", "dim_store", "dim_product", "agg_sales_cube"];
+for (const t of tables) {
+  const url = new URL(`data/${t}.parquet`, location.href).href;
+  await db.registerFileURL(`${t}.parquet`, url, duckdb.DuplicateProtocol.HTTP, false);
+  await conn.query(`CREATE TABLE ${t} AS SELECT * FROM read_parquet('${t}.parquet')`);
+}
+await conn.query(`
+  CREATE TABLE sales AS
+  SELECT f.*, d.year, d.quarter, d.month, d.month_name, d.is_weekend,
+         s.store_name, s.city, s.country, s.region,
+         p.category, p.brand, p.product_name, p.list_price
+  FROM fact_sales f
+  JOIN dim_date d    USING (date_key)
+  JOIN dim_store s   USING (store_id)
+  JOIN dim_product p USING (product_id)`);
+const manifest = await fetch("data/manifest.json").then((r) => r.json()).catch(() => null);
+$("status").textContent = `Ready · ${nf0.format(manifest?.tables?.fact_sales?.rows ?? 0)} fact rows loaded in ${nf1.format((performance.now() - t0) / 1000)} s`;
+if (manifest) $("built").textContent = `cube built ${manifest.built_at} with DuckDB ${manifest.duckdb_version}`;
+
+// ---------- Controls ----------
+function fillSelect(el, entries, value) {
+  el.innerHTML = entries.map(([v, l]) => `<option value="${html(v)}">${html(l)}</option>`).join("");
+  el.value = value;
+}
+const dimEntries = Object.entries(DIMS).map(([k, d]) => [k, d.label]);
+fillSelect($("rows"), dimEntries, state.rows);
+fillSelect($("cols"), [["", "— none —"], ...dimEntries], state.cols);
+fillSelect($("measure"), Object.entries(MEASURES).map(([k, m]) => [k, m.label]), state.measure);
+const years = (await query("SELECT DISTINCT year FROM dim_date ORDER BY 1")).rows.map((r) => String(r.year));
+fillSelect($("fyear"), [["", "All years"], ...years.map((y) => [y, y])], "");
+const channels = (await query("SELECT DISTINCT channel FROM fact_sales ORDER BY 1")).rows.map((r) => r.channel);
+fillSelect($("fchannel"), [["", "All channels"], ...channels.map((c) => [c, c])], "");
+
+for (const [id, key] of [["rows", "rows"], ["cols", "cols"], ["measure", "measure"], ["fyear", "year"], ["fchannel", "channel"]]) {
+  $(id).addEventListener("change", (e) => { state[key] = e.target.value; render(); });
+}
+
+function whereClause() {
+  const c = [];
+  if (state.year) c.push(`year = ${Number(state.year)}`);
+  if (state.channel) c.push(`channel = '${esc(state.channel)}'`);
+  for (const f of state.filters) c.push(`${DIMS[f.dim].expr} = '${esc(f.value)}'`);
+  return c.length ? "WHERE " + c.join("\n  AND ") : "";
+}
+
+function renderChips() {
+  $("chips").innerHTML = state.filters.length
+    ? state.filters.map((f, i) => `<span class="chip">${html(DIMS[f.dim].label)} = ${html(f.value)}<button data-i="${i}" title="Roll up">×</button></span>`).join("")
+    : `<span class="hint">No drill-down filters.</span>`;
+  $("chips").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    const i = Number(b.dataset.i);
+    const removed = state.filters.splice(i);   // roll up: drop this level and deeper
+    state.rows = removed[0].dim;
+    $("rows").value = state.rows;
+    render();
+  }));
+}
+
+async function renderKpis() {
+  const { rows: [k] } = await query(`
+    SELECT sum(revenue) AS revenue, sum(revenue - cost) AS profit, count(*) AS orders,
+           sum(quantity) AS units, 100 * sum(revenue - cost) / sum(revenue) AS margin
+    FROM sales ${whereClause()}`);
+  const items = [["Revenue", fmt(k.revenue, "money")], ["Profit", fmt(k.profit, "money")],
+                 ["Margin", fmt(k.margin, "pct")], ["Orders", fmt(k.orders, "int")], ["Units", fmt(k.units, "int")]];
+  $("kpis").innerHTML = items.map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+}
+
+async function render() {
+  renderChips();
+  renderKpis();
+  const R = DIMS[state.rows], M = MEASURES[state.measure];
+  const C = state.cols && state.cols !== state.rows ? DIMS[state.cols] : null;
+  const where = whereClause();
+  const sql = C
+    ? `SELECT ${R.expr} AS row_key, ${C.expr} AS col_key,\n       ${M.expr} AS value\nFROM sales\n${where}\nGROUP BY ALL\nORDER BY row_key, col_key;`
+    : `SELECT ${R.expr} AS row_key,\n       ${M.expr} AS value\nFROM sales\n${where}\nGROUP BY ALL\nORDER BY row_key;`;
+  $("sql").textContent = sql;
+  const t = performance.now();
+  const { rows } = await query(sql);
+  $("timing").textContent = `· ${rows.length} cells in ${nf1.format(performance.now() - t)} ms`;
+  $("tableTitle").textContent = `${M.label} by ${R.label}${C ? " × " + C.label : ""}`;
+
+  const drillable = !!R.next;
+  const totals = C ? null : (await query(`SELECT ${M.expr} AS value FROM sales ${where}`)).rows[0].value;
+  let body = "", head = "";
+  let chartData = [];
+  if (!C) {
+    head = `<tr><th>${html(R.label)}</th><th>${html(M.label)}</th></tr>`;
+    body = rows.map((r) => `<tr><td class="${drillable ? "drill" : ""}" data-v="${html(r.row_key)}">${html(r.row_key)}</td><td>${fmt(r.value, M.fmt)}</td></tr>`).join("");
+    body += `<tr class="total"><td>Total</td><td>${fmt(totals, M.fmt)}</td></tr>`;
+    chartData = rows.map((r) => [r.row_key, Number(r.value)]);
+  } else {
+    const colKeys = [...new Set(rows.map((r) => r.col_key))].sort().slice(0, 16);
+    const byRow = new Map();
+    for (const r of rows) {
+      if (!byRow.has(r.row_key)) byRow.set(r.row_key, {});
+      byRow.get(r.row_key)[r.col_key] = r.value;
+    }
+    head = `<tr><th>${html(R.label)} \\ ${html(C.label)}</th>${colKeys.map((c) => `<th>${html(c)}</th>`).join("")}</tr>`;
+    body = [...byRow.entries()].map(([rk, vals]) =>
+      `<tr><td class="${drillable ? "drill" : ""}" data-v="${html(rk)}">${html(rk)}</td>${colKeys.map((c) => `<td>${fmt(vals[c], M.fmt)}</td>`).join("")}</tr>`).join("");
+    chartData = [...byRow.entries()].map(([rk, vals]) => [rk, Object.values(vals).reduce((a, b) => a + Number(b), 0)]);
+    if (M.fmt === "pct" || state.measure === "ticket") chartData = [];
+  }
+  $("table").innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  $("table").querySelectorAll("td.drill").forEach((td) => td.addEventListener("click", () => {
+    state.filters.push({ dim: state.rows, value: td.dataset.v });
+    state.rows = R.next;
+    $("rows").value = state.rows;
+    render();
+  }));
+  drawChart(chartData, M.fmt);
+}
+
+function drawChart(data, kind) {
+  if (!data.length) { $("chart").innerHTML = `<p class="hint">Chart shows single-measure totals per row.</p>`; return; }
+  data = data.slice(0, 24);
+  const max = Math.max(...data.map((d) => d[1]), 0) || 1;
+  const rowH = 24, labelW = 150, w = 520, h = data.length * rowH + 8;
+  const bars = data.map(([k, v], i) => {
+    const bw = Math.max(1, (v / max) * (w - labelW - 90));
+    const y = i * rowH + 4;
+    return `<text x="${labelW - 8}" y="${y + 15}" text-anchor="end">${html(String(k).slice(0, 22))}</text>
+            <rect x="${labelW}" y="${y + 3}" width="${bw}" height="${rowH - 8}" rx="3" fill="var(--bar)"></rect>
+            <text x="${labelW + bw + 6}" y="${y + 15}">${fmt(v, kind)}</text>`;
+  }).join("");
+  $("chart").innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="Bar chart">${bars}</svg>`;
+}
+
+// ---------- SQL console ----------
+async function runConsole() {
+  const out = $("consoleOut");
+  try {
+    const t = performance.now();
+    const { cols, rows } = await query($("console").value);
+    const ms = nf1.format(performance.now() - t);
+    out.innerHTML = `<p class="hint">${rows.length} rows · ${ms} ms</p><table><thead><tr>${cols.map((c) => `<th>${html(c)}</th>`).join("")}</tr></thead><tbody>${
+      rows.slice(0, 500).map((r) => `<tr>${cols.map((c) => `<td>${html(r[c] ?? "NULL")}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  } catch (e) {
+    out.innerHTML = `<pre>${html(e.message)}</pre>`;
+  }
+}
+$("runSql").addEventListener("click", runConsole);
+$("cubeSql").addEventListener("click", () => {
+  $("console").value = `-- Read the MOLAP-style cube built in CI with GROUP BY CUBE
+-- grouping_id = 31 -> grand total; 30 -> by channel; 11 -> by year x region
+SELECT grouping_id, year, region, category, channel, orders, revenue, profit
+FROM agg_sales_cube
+WHERE quarter IS NULL AND (grouping_id IN (31, 30) OR (year IS NOT NULL AND region IS NOT NULL AND category IS NULL AND channel IS NULL))
+ORDER BY grouping_id DESC, year, region;`;
+  runConsole();
+});
+
+render();
+runConsole();
+</script>
+</body>
+</html>
