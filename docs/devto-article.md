@@ -179,7 +179,6 @@ Aggregations over all 500K rows come back in tens of milliseconds, entirely in t
 
 `.github/workflows/deploy.yml` runs on every push to `main`, on demand, and **every Monday** so the cube gets refreshed:
 
-{% raw %}
 ```yaml
 on:
   push: { branches: [main] }
@@ -204,12 +203,11 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    environment: { name: github-pages, url: "${{ steps.deployment.outputs.page_url }}" }
+    environment: github-pages
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
 ```
-{% endraw %}
 
 The generated Parquet files are **not committed**. They are build artifacts, so the repo only holds code. To deploy your own copy: fork the repo, go to **Settings → Pages → Source: GitHub Actions**, and push.
 

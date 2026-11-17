@@ -13,6 +13,8 @@ A complete **Online Analytical Processing (OLAP)** solution that costs $0 to run
 
 **Live demo:** https://ikerasierrar.github.io/olap-sales-cube-duckdb/
 
+**Article (dev.to):** https://dev.to/ikers/building-a-serverless-olap-cube-with-duckdb-duckdb-wasm-and-github-actions-no-aws-0-4ogj
+
 ## Architecture
 
 ```
