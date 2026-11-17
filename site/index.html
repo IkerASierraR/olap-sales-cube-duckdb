@@ -178,7 +178,7 @@ const t0 = performance.now();
 const tables = ["fact_sales", "dim_date", "dim_store", "dim_product", "agg_sales_cube"];
 for (const t of tables) {
   const url = new URL(`data/${t}.parquet`, location.href).href;
-  await db.registerFileURL(`${t}.parquet`, url, duckdb.DuplicateProtocol.HTTP, false);
+  await db.registerFileURL(`${t}.parquet`, url, duckdb.DuckDBDataProtocol.HTTP, false);
   await conn.query(`CREATE TABLE ${t} AS SELECT * FROM read_parquet('${t}.parquet')`);
 }
 await conn.query(`
